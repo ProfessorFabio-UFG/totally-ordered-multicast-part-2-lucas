@@ -51,16 +51,29 @@ def waitForLogsAndCompare(N_MSGS, numPeers):
         msgPack = conn.recv(32768)
         conn.close()
         log_data = pickle.loads(msgPack)
-        lamportClocks.append([msg[0] for msg in log_data])  # timestamps
-        print(f'[+] Received log from peer {numReceived} ({addr[0]})')
+        
+        if len(log_data) != N_MSGS:
+            print(f"[!] Peer {numReceived} enviou {len(log_data)} mensagens em vez de {N_MSGS}")
+        
+        lamportClocks.append([msg[0] for msg in log_data])
+        print(f"[+] Received log from peer {numReceived} ({addr[0]})")
         numReceived += 1
 
     print('[*] Comparing logs for total order...')
     unordered = 0
     for j in range(N_MSGS):
-        firstClock = lamportClocks[0][j]
+        try:
+            firstClock = lamportClocks[0][j]
+        except IndexError:
+            print(f"[!] Peer 0 não tem mensagem na posição {j}")
+            continue
         for i in range(1, numPeers):
-            if lamportClocks[i][j] != firstClock:
+            try:
+                if lamportClocks[i][j] != firstClock:
+                    unordered += 1
+                    break
+            except IndexError:
+                print(f"[!] Peer {i} não tem mensagem na posição {j}")
                 unordered += 1
                 break
 
