@@ -1,5 +1,4 @@
 from socket import *
-import threading
 import pickle
 import time
 import sys
@@ -17,9 +16,6 @@ lamportClock = 0
 myself = peer_id
 log = []
 
-# Endereços dos pares (será preenchido após consulta ao group manager)
-peer_addresses = []
-
 sendSocket = socket(AF_INET, SOCK_DGRAM)
 recvSocket = socket(AF_INET, SOCK_DGRAM)
 recvSocket.bind(('0.0.0.0', PEER_UDP_PORT_INST))
@@ -29,45 +25,65 @@ serverSock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serverSock.bind(('0.0.0.0', PEER_TCP_PORT_INST))
 serverSock.listen(5)
 
-# Diálogo por peer
-DIALOGUES = {
+NAMES = {0: "Pessoa 1", 1: "Pessoa 2"}
+
+PERSON_MESSAGES = {
     0: [
-        "Olá, está na escuta?",
-        "Precisamos verificar os suprimentos.",
-        "Ótimo, iniciando procedimento."
+        "Olá, você está na escuta?",
+        "Como está o andamento da missão?",
+        "Recebi um relatório da situação.",
+        "Temos confirmação de posição.",
+        "Tudo conforme o esperado?",
+        "Já deu algum problema?",
+        "Está tudo tranquilo por aí?",
+        "Temos tudo sob controle.",
+        "Precisamos revisar o plano?",
+        "Confirmado, seguimos em frente.",
+        "Prepare-se para a próxima etapa.",
+        "Boa sorte aí!",
+        "Mantenha a segurança.",
+        "Retornaremos em breve.",
+        "Missão quase concluída."
     ],
     1: [
-        "Sim, estou ouvindo.",
-        "Verificado, tudo certo.",
-        "Confirmado. Boa sorte."
+        "Na escuta, pode falar.",
+        "O andamento está dentro do previsto.",
+        "Recebida, aguardando detalhes.",
+        "Posição confirmada aqui.",
+        "Tudo certo, sem problemas.",
+        "Nada a relatar até agora.",
+        "Sim, aqui está tranquilo.",
+        "Perfeito, estamos preparados.",
+        "Revisão do plano não necessária.",
+        "Entendido, sigo adiante.",
+        "Tudo pronto para próxima etapa.",
+        "Obrigado, seguimos com atenção.",
+        "Segurança reforçada.",
+        "Permanecemos em alerta.",
+        "Missão finalizada, voltando."
     ]
 }
-
-NUM_MESSAGES = len(DIALOGUES[myself])
 
 def sendMessage(msg, dest_ip, dest_port):
     global lamportClock
     lamportClock += 1
     msg_data = (lamportClock, myself, msg)
     sendSocket.sendto(pickle.dumps(msg_data), (dest_ip, dest_port))
-    print(f"[{lamportClock}] Enviado para peer: {msg}")
-    log.append((lamportClock, f"Sent: {msg}"))
+    print(f"{NAMES[myself]}: {msg}")
+    log.append((lamportClock, f"{NAMES[myself]}: {msg}"))
 
-def receiveMessages(expected_msgs):
+def receiveMessage():
     global lamportClock
-    received = 0
-    while received < expected_msgs:
-        data, addr = recvSocket.recvfrom(2048)
-        recv_clock, sender_id, msg = pickle.loads(data)
-        lamportClock = max(lamportClock, recv_clock) + 1
-        print(f"[{lamportClock}] Recebido de peer {sender_id}: {msg}")
-        log.append((lamportClock, f"Received: {msg}"))
-        received += 1
+    data, addr = recvSocket.recvfrom(2048)
+    recv_clock, sender_id, msg = pickle.loads(data)
+    lamportClock = max(lamportClock, recv_clock) + 1
+    print(f"{NAMES[sender_id]}: {msg}")
+    log.append((lamportClock, f"{NAMES[sender_id]}: {msg}"))
 
 def waitToStart():
     conn, addr = serverSock.accept()
     data = conn.recv(1024)
-    num_msgs = pickle.loads(data)
+    peer_number, num_msgs = pickle.loads(data)
     conn.send(pickle.dumps(f"Peer {myself} pronto"))
     conn.close()
     return num_msgs
@@ -96,36 +112,33 @@ def sendLogs():
     clientSock.connect((SERVER_ADDR, SERVER_PORT))
     clientSock.send(pickle.dumps(log))
     clientSock.close()
-    print("Log enviado ao servidor de comparação.")
+    print("📨 Log enviado ao servidor de comparação.")
 
 def main():
     registerWithGroupManager()
     num_msgs = waitToStart()
     peer_list = getPeers()
 
-    # Espera encontrar o outro peer
     other_peers = [p for p in peer_list if p[1] != PEER_TCP_PORT_INST]
-    if not other_peers:
-        print("Esperando outro peer entrar no grupo...")
-        while not other_peers:
-            time.sleep(2)
-            other_peers = [p for p in getPeers() if p[1] != PEER_TCP_PORT_INST]
+    while not other_peers:
+        print("Esperando outro peer no grupo...")
+        time.sleep(2)
+        peer_list = getPeers()
+        other_peers = [p for p in peer_list if p[1] != PEER_TCP_PORT_INST]
 
     other_ip, _ = other_peers[0]
+    print(f"\n Conversa iniciada entre {NAMES[0]} e {NAMES[1]}\n")
 
-    print(f"Conversando com peer em {other_ip}")
-
-    # Peer 0 começa, peer 1 escuta primeiro
-    if myself == 0:
-        for i in range(NUM_MESSAGES):
-            sendMessage(DIALOGUES[myself][i], other_ip, PEER_UDP_PORT + 1)
-            time.sleep(1)
-            receiveMessages(1)
-    else:
-        for i in range(NUM_MESSAGES):
-            receiveMessages(1)
-            time.sleep(1)
-            sendMessage(DIALOGUES[myself][i], other_ip, PEER_UDP_PORT)
+    # Cada peer envia e recebe 'num_msgs' vezes alternadamente
+    for i in range(num_msgs):
+        if myself == 0:
+            sendMessage(PERSON_MESSAGES[0][i], other_ip, PEER_UDP_PORT + 1)
+            time.sleep(0.5)
+            receiveMessage()
+        else:
+            receiveMessage()
+            time.sleep(0.5)
+            sendMessage(PERSON_MESSAGES[1][i], other_ip, PEER_UDP_PORT)
 
     sendLogs()
 
