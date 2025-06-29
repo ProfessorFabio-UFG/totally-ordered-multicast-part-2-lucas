@@ -3,6 +3,7 @@ import pickle
 import time
 import sys
 from constMP import *
+from requests import get
 
 if len(sys.argv) != 2:
     print("Uso: python peerCommunicator.py <peer_id>")
@@ -97,9 +98,17 @@ def getPeers():
     clientSock.close()
     return pickle.loads(msg)
 
+
+def get_public_ip():
+    try:
+        return get('https://api.ipify.org').text.strip()
+    except:
+        return '127.0.0.1'
+
 def registerWithGroupManager():
     global lamportClock
-    ip = gethostbyname(gethostname())
+    ip = get_public_ip()
+    print(f"[INFO] Registrando com IP: {ip}")  
     clientSock = socket(AF_INET, SOCK_STREAM)
     clientSock.connect((GROUPMNGR_ADDR, GROUPMNGR_TCP_PORT))
     req = {"op": "register", "ipaddr": ip, "port": PEER_TCP_PORT_INST, "lamport_clock": lamportClock}
@@ -112,7 +121,7 @@ def sendLogs():
     clientSock.connect((SERVER_ADDR, SERVER_PORT))
     clientSock.send(pickle.dumps(log))
     clientSock.close()
-    print("📨 Log enviado ao servidor de comparação.")
+    print("Log enviado ao servidor de comparação.")
 
 def main():
     registerWithGroupManager()
