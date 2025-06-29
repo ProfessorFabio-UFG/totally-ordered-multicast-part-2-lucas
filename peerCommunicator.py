@@ -18,6 +18,7 @@ PEER_TCP_PORT_INST = PEER_TCP_PORT + peer_id
 
 lamportClock = 0
 myself = None
+NUM_MESSAGES = 0  # valor padrão
 
 sendSocket = socket(AF_INET, SOCK_DGRAM)
 recvSocket = socket(AF_INET, SOCK_DGRAM)
@@ -28,7 +29,7 @@ serverSock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serverSock.bind(('0.0.0.0', PEER_TCP_PORT_INST))
 serverSock.listen(5)
 
-# Mensagens temáticas por peer (planejamento de missão de resgate)
+# Mensagens temáticas por peer
 ROLE_MESSAGES = {
     0: "Iniciando análise de área.",
     1: "Equipes médicas prontas.",
@@ -85,7 +86,7 @@ def waitToStart():
     return (myself, nMsgs)
 
 def sendLogs():
-    global lamportClock
+    global lamportClock, NUM_MESSAGES
     log = []
     for i in range(NUM_MESSAGES):
         lamportClock += 1
@@ -98,9 +99,9 @@ def sendLogs():
     print(f"Sent log of {len(log)} messages to comparison server.")
 
 def main():
+    global NUM_MESSAGES
     registerWithGroupManager()
     myself, nMsgs = waitToStart()
-    global NUM_MESSAGES
     NUM_MESSAGES = nMsgs
     print(f"Peer {myself} starting with {NUM_MESSAGES} messages.")
 
