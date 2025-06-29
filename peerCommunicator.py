@@ -26,7 +26,7 @@ serverSock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serverSock.bind(('0.0.0.0', PEER_TCP_PORT_INST))
 serverSock.listen(5)
 
-NAMES = {0: "Pessoa 1", 1: "Pessoa 2"}
+NAMES = {0: "VERMELHO", 1: "AZUL"}
 
 PERSON_MESSAGES = {
     0: [
