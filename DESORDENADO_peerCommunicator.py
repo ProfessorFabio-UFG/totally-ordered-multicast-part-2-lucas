@@ -1,9 +1,11 @@
-
 from socket import *
-import pickle
+import threading
+import random
 import time
+import pickle
 import sys
 from constMP import *
+from requests import get
 
 if len(sys.argv) != 2:
     print("Uso: python peerCommunicator.py <peer_id>")
@@ -14,6 +16,7 @@ PEER_UDP_PORT_INST = PEER_UDP_PORT + peer_id
 PEER_TCP_PORT_INST = PEER_TCP_PORT + peer_id
 myself = peer_id
 log = []
+NUM_MESSAGES = 0
 
 sendSocket = socket(AF_INET, SOCK_DGRAM)
 recvSocket = socket(AF_INET, SOCK_DGRAM)
@@ -24,10 +27,10 @@ serverSock.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 serverSock.bind(('0.0.0.0', PEER_TCP_PORT_INST))
 serverSock.listen(5)
 
-NAMES = {0: "Pessoa 1", 1: "Pessoa 2"}
+NAMES = {0: "VERMELHO", 1: "AZUL"}
 
 PERSON_MESSAGES = {
-     0: [
+    0: [
         "Olá, você está na escuta?",
         "Como está o andamento da missão?",
         "Recebi um relatório da situação.",
@@ -63,17 +66,35 @@ PERSON_MESSAGES = {
     ]
 }
 
-def sendMessage(msg, dest_ip, dest_port):
-    msg_data = (myself, msg)
-    sendSocket.sendto(pickle.dumps(msg_data), (dest_ip, dest_port))
-    print(f"{NAMES[myself]}: {msg}")
-    log.append(f"{NAMES[myself]}: {msg}")
+def get_public_ip():
+    try:
+        return get('https://api.ipify.org').text.strip()
+    except:
+        return '127.0.0.1'
 
-def receiveMessage():
-    data, addr = recvSocket.recvfrom(2048)
-    sender_id, msg = pickle.loads(data)
-    print(f"{NAMES[sender_id]}: {msg}")
-    log.append(f"{NAMES[sender_id]}: {msg}")
+def registerWithGroupManager():
+    ip = get_public_ip()
+    print(f"[INFO] Registrando com IP: {ip}")
+    clientSock = socket(AF_INET, SOCK_STREAM)
+    clientSock.connect((GROUPMNGR_ADDR, GROUPMNGR_TCP_PORT))
+    req = {"op": "register", "ipaddr": ip, "port": PEER_TCP_PORT_INST}
+    clientSock.send(pickle.dumps(req))
+    clientSock.close()
+
+def sendMessageThread(dest_ip, dest_port):
+    for i in range(NUM_MESSAGES):
+        time.sleep(random.uniform(0.5, 1.5))
+        msg = PERSON_MESSAGES[myself][i]
+        sendSocket.sendto(pickle.dumps((myself, msg)), (dest_ip, dest_port))
+        print(f"{NAMES[myself]}: {msg}")
+        log.append(f"{NAMES[myself]}: {msg}")
+
+def receiveMessageThread():
+    for _ in range(NUM_MESSAGES):
+        data, addr = recvSocket.recvfrom(2048)
+        sender_id, msg = pickle.loads(data)
+        print(f"{NAMES[sender_id]}: {msg}")
+        log.append(f"{NAMES[sender_id]}: {msg}")
 
 def waitToStart():
     conn, addr = serverSock.accept()
@@ -92,15 +113,6 @@ def getPeers():
     clientSock.close()
     return pickle.loads(msg)
 
-def registerWithGroupManager():
-    ip = get_public_ip()
-    print(f"[INFO] Registrando com IP: {ip}")
-    clientSock = socket(AF_INET, SOCK_STREAM)
-    clientSock.connect((GROUPMNGR_ADDR, GROUPMNGR_TCP_PORT))
-    req = {"op": "register", "ipaddr": ip, "port": PEER_TCP_PORT_INST}
-    clientSock.send(pickle.dumps(req))
-    clientSock.close()
-
 def sendLogs():
     clientSock = socket(AF_INET, SOCK_STREAM)
     clientSock.connect((SERVER_ADDR, SERVER_PORT))
@@ -108,19 +120,14 @@ def sendLogs():
     clientSock.close()
     print("Log enviado ao servidor de comparação.")
 
-def get_public_ip():
-    from requests import get
-    try:
-        return get('https://api.ipify.org').text.strip()
-    except:
-        return '127.0.0.1'
-
 def main():
+    global NUM_MESSAGES
     registerWithGroupManager()
-    num_msgs = waitToStart()
-    peer_list = getPeers()
+    NUM_MESSAGES = waitToStart()
 
+    peer_list = getPeers()
     other_peers = [p for p in peer_list if p[1] != PEER_TCP_PORT_INST]
+
     while not other_peers:
         print("Esperando outro peer no grupo...")
         time.sleep(2)
@@ -128,17 +135,18 @@ def main():
         other_peers = [p for p in peer_list if p[1] != PEER_TCP_PORT_INST]
 
     other_ip, _ = other_peers[0]
-    print(f"\n Conversa iniciada entre {NAMES[0]} e {NAMES[1]}\n")
+    other_peer_id = 0 if myself == 1 else 1
+    print(f"\nConversa entre {NAMES[myself]} e {NAMES[other_peer_id]} iniciada!\n")
 
-    for i in range(num_msgs):
-        if myself == 0:
-            sendMessage(PERSON_MESSAGES[0][i], other_ip, PEER_UDP_PORT + 1)
-            time.sleep(0.5)
-            receiveMessage()
-        else:
-            receiveMessage()
-            time.sleep(0.5)
-            sendMessage(PERSON_MESSAGES[1][i], other_ip, PEER_UDP_PORT)
+    # Iniciar threads paralelas
+    sender = threading.Thread(target=sendMessageThread, args=(other_ip, PEER_UDP_PORT + other_peer_id))
+    receiver = threading.Thread(target=receiveMessageThread)
+
+    sender.start()
+    receiver.start()
+
+    sender.join()
+    receiver.join()
 
     sendLogs()
 
